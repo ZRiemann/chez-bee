@@ -9,7 +9,6 @@
     (display "Copyright (c) 2018 Z.Riemann") (newline)
     (display "https://github.com/ZRiemann/chez-bee") (newline)
     (newline)))
-
 (display-license)
 
 ;;; newer-source
@@ -21,7 +20,7 @@
      (if (file-exists? source)
          (if (file-exists? obj)
              (time>? (file-modification-time source) (file-modification-time obj))
-             #f)
+             #t)
          #f)]))
 
 ;;; for-each-list
@@ -39,9 +38,7 @@
   (syntax-rules ()
     [(_ path handler recursive?)
      (let ftw ([cur-path path])
-       (display cur-path) (newline)
        (cd cur-path)
-       (display (cd)) (newline)
        (call-with-values
            (lambda ()
              (partition file-directory? (directory-list cur-path)))
@@ -95,51 +92,44 @@
 
 (define main
   (lambda (src-path obj-path)
-    ;; fix linked path
-    (cd src-path)
-    (set! src-path (cd))
-    (cd obj-path)
-    (set! obj-path (cd))
-    ;; make obj-path
-    (make-dir obj-path)
-
     (let* ([check-obj (lambda (src obj)
                         ;; check <src> is newer then <obj-file>
                         ;; ${src_path}/aaa/bbb/ccc.ss
                         ;; ${obj-path}/aaa/bbb/ccc.${ext}
-
-                        (let* ([src-name (string-append src-path
+                        (let* ([cur-dir (cd)]
+                               [src-name (string-append cur-dir
                                                         (string (directory-separator))
                                                         src)]
-                               [diff-path (let ([cur-dir (cd)])
-                                            (substring cur-dir
-                                                       (string-length src-path)
-                                                       (string-length cur-dir)))]
+                               [diff-path (substring cur-dir
+                                                     (string-length src-path)
+                                                     (string-length cur-dir))]
                                [obj-name (string-append obj-path
                                                         diff-path
                                                         (string (directory-separator))
                                                         obj)])
                           ;; make diff-path
-                          (when (string=? "" diff-path)
-                                (make-dir (string-append obj-path
-                                                         (stirng (directory-separator))
-                                                         diff-path)))
+                          (unless (string=? "" diff-path)
+                                  (make-dir (string-append obj-path
+                                                           (string (directory-separator))
+                                                           diff-path)))
+                          ;; (maybe-compile-file src-name obj-name)
                           ;; check newer source file
                           (if (newer-source? src-name obj-name)
-                              obj-name
+                              (begin
+                                (compile-file src-name obj-name)
+                                obj-name)
                               '())))]
            [build-depedents (lambda (src) src)]
            [compile-file (lambda (fname)
                            (let* ([res (chez-source? fname)]
                                   [obj (cdr res)])
                              (when (car res)
-                                   (display obj) (newline)
-                                   #;
                                    (let ([obj-file (check-obj fname obj)])
-                                   (unless (null? obj-file)
-                                   ;; check compile-program or compile-library
-                                   ;; or compile-file
-                                   (display obj-file) (newline))))))]
+                                     (unless (null? obj-file)
+                                             ;; check compile-program or compile-library
+                                             ;; or compile-file
+
+                                             (display obj-file) (newline))))))]
            [create-distribution-package (lambda ()
                                           (display "create distribution...\n"))])
       ;; compile files
@@ -147,7 +137,49 @@
       ;; create distribution package
       (create-distribution-package))))
 
-(main "/home/itc/git/ZChezScheme/src"
-      "/home/itc/git/ZChezScheme/obj")
+(let ([cmd (cdr (command-line))]
+      [src-path "src"]
+      [obj-path "build"]
+      [abslute-path (lambda (path)
+                      (let ([head (string-ref path 0)]
+                            [remain (substring path 1 (string-length path))])
+                        (if (eqv? (directory-separator) head)
+                            path
+                            ;; ~/path
+                            (if (eqv? #\~  head)
+                                (let ([home-path (cd (string #\~))])
+                                  (set! home-path (cd))
+                                  (display home-path) (newline)
+                                  (string-append home-path
+                                                 remain))
+                                (let ([cur-path (cd)])
+                                  (if (eqv? #\. head)
+                                      ;; ./path
+                                      (string-append cur-path
+                                                     remain)
+                                      ;; path
+                                      (string-append cur-path
+                                                     (string (directory-separator))
+                                                     path)))))))])
+  ;; set src-path obj-path
+  (unless (null? cmd)
+          (set! src-path (car cmd))
+          (set! cmd (cdr cmd))
+          (unless (null? cmd)
+                  (set! obj-path (car cmd))))
+  ;; cover to abslute path
+  (set! src-path (abslute-path src-path))
+  (set! obj-path (abslute-path obj-path))
+
+  (when (file-exists? src-path)
+        ;; fix linked path
+        (cd src-path)
+        (set! src-path (cd))
+        (make-dir obj-path)
+        (cd obj-path)
+        (set! obj-path (cd))
+        ;; main
+        (main src-path obj-path)))
+
 ;;; TODO: compile each source file
 ;;; TODO: make distribution
