@@ -1,6 +1,6 @@
 #!/usr/bin/scheme --script
 
-#;(import (rnrs base))
+(import (rnrs base))
 
 ;;; display license
 (define display-license
@@ -10,28 +10,6 @@
     (display "https://github.com/ZRiemann/chez-bee") (newline)
     (newline)))
 (display-license)
-
-;;; newer-source
-;;; use case:
-;;; source file is newer the object file, then need recompile
-(define-syntax newer-source?
-  (syntax-rules ()
-    [(_ source obj)
-     (if (file-exists? source)
-         (if (file-exists? obj)
-             (time>? (file-modification-time source) (file-modification-time obj))
-             #t)
-         #f)]))
-
-;;; for-each-list
-(define-syntax list-for-each
-  (syntax-rules ()
-    [(_ ls handler)
-     (when (and (list? ls) (> (length ls) 0) (procedure? handler))
-           (let visiter ([item (car ls)] [remain (cdr ls)])
-             (handler item)
-             (unless (null? remain)
-                     (visiter (car remain) (cdr remain)))))]))
 
 ;;; file-tree-walk
 (define-syntax file-tree-walk
@@ -43,13 +21,13 @@
            (lambda ()
              (partition file-directory? (directory-list cur-path)))
          (lambda (dirs files)
-           (list-for-each files handler)
+           (for-each handler files)
            (when recursive?
                  (set! dirs
                        (map (lambda (dir)
                               (string-append cur-path "/" dir))
                             dirs))
-                 (list-for-each dirs ftw)))))]))
+                 (for-each ftw dirs)))))]))
 
 ;;; check <fname> is Chez Scheme source file
 ;;;
@@ -60,35 +38,29 @@
     [(_ fname)
      (call/cc
       (lambda (break)
-        (list-for-each (library-extensions)
-                       (lambda (extension)
-                         (let ([ext (car extension)]
-                               [len (string-length fname)]
-                               [ext-len (string-length (car extension))])
-                           (when (and (> len ext-len)
-                                      (string=? ext (substring fname
-                                                               (- len ext-len)
-                                                               len)))
+        (for-each (lambda (extension)
+                    (let ([ext (car extension)]
+                          [len (string-length fname)]
+                          [ext-len (string-length (car extension))])
+                      (when (and (> len ext-len)
+                                 (string=? ext (substring fname
+                                                          (- len ext-len)
+                                                          len)))
                                  (break (cons #t
                                               (string-append (substring fname 0 (- len ext-len))
-                                                             (cdr extension))))))))
+                                                             (cdr extension)))))))
+                  (library-extensions))
         (cons #f '())))]))
 
-(define-syntax make-dir
-  (syntax-rules ()
-    [(_ path)
-     (unless (file-exists? path)
-             (let make([pos 1]
-                       [len (string-length path)])
-               (when (<= pos len)
-                     (if (or (= pos len)
-                             (eqv? (string-ref path (- pos 1)) (directory-separator)))
-                         (begin
-                           (unless (file-exists? (substring path 0 pos))
-                                   (mkdir (substring path 0 pos)))
-                           (make (+ pos 1) len))
-                         ;; else
-                         (make (+ pos 1) len)))))]))
+(define-syntax bee-mkdir
+    (syntax-rules ()
+      [(_ path)
+       (unless (file-exists? path)
+               (let mkparent ([parent (path-parent path)]
+                              [mk-path path])
+                 (unless (file-exists? parent)
+                         (mkparent (path-parent parent) parent))
+                 (mkdir mk-path)))]))
 
 (define main
   (lambda (src-path obj-path)
@@ -109,27 +81,19 @@
                                                         obj)])
                           ;; make diff-path
                           (unless (string=? "" diff-path)
-                                  (make-dir (string-append obj-path
+                                  (bee-mkdir (string-append obj-path
                                                            (string (directory-separator))
                                                            diff-path)))
-                          ;; (maybe-compile-file src-name obj-name)
-                          ;; check newer source file
-                          (if (newer-source? src-name obj-name)
-                              (begin
-                                (compile-file src-name obj-name)
-                                obj-name)
-                              '())))]
+                          ;; (generate-inspector-infomation #f)
+                          ;; (strip-fasl-file)
+                          ;; (make-boot-file "app.boot" '("scheme") "app.so")
+                          (maybe-compile-file src-name obj-name)))]
            [build-depedents (lambda (src) src)]
            [compile-file (lambda (fname)
                            (let* ([res (chez-source? fname)]
                                   [obj (cdr res)])
                              (when (car res)
-                                   (let ([obj-file (check-obj fname obj)])
-                                     (unless (null? obj-file)
-                                             ;; check compile-program or compile-library
-                                             ;; or compile-file
-
-                                             (display obj-file) (newline))))))]
+                                   (check-obj fname obj))))]
            [create-distribution-package (lambda ()
                                           (display "create distribution...\n"))])
       ;; compile files
@@ -175,7 +139,7 @@
         ;; fix linked path
         (cd src-path)
         (set! src-path (cd))
-        (make-dir obj-path)
+        (bee-mkdir obj-path)
         (cd obj-path)
         (set! obj-path (cd))
         ;; main
