@@ -1,0 +1,11 @@
+* programmer 概述
+  利用chez scheme灵活的语言特性，创造一个“程序员”。programmer可以自动编写各类代码，并编译部署生产环境。
+** 目标
+   1. 兼容各语言版本，如web开发的 node.js，php，go，pthon等；
+   2. 规范代码模式，避免代码错误；
+   3. 提高开发效率，避免重复的代码复制；
+** 思路
+   programmer 解析 programmer.ss, 生成对应的源码;
+   解析 deploy.ss, 部署生产环境；
+
+* 设计
